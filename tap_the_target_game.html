@@ -1,0 +1,154 @@
+
+<style>
+  #game-area { position: relative; width: 100%; height: 340px; background: var(--color-background-secondary); border-radius: var(--border-radius-lg); overflow: hidden; border: 0.5px solid var(--color-border-tertiary); touch-action: none; user-select: none; }
+  .target { position: absolute; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 22px; transition: transform 0.05s; }
+  .target:active { transform: scale(0.85); }
+  #hud { display: flex; justify-content: space-between; align-items: center; padding: 10px 4px; }
+  .stat-box { text-align: center; }
+  .stat-label { font-size: 12px; color: var(--color-text-secondary); }
+  .stat-val { font-size: 22px; font-weight: 500; color: var(--color-text-primary); }
+  #msg { text-align: center; padding: 80px 20px 0; font-size: 16px; color: var(--color-text-secondary); }
+  #start-btn { display: block; margin: 18px auto 0; padding: 12px 36px; font-size: 16px; border-radius: 24px; background: var(--color-background-primary); border: 1.5px solid var(--color-border-primary); color: var(--color-text-primary); cursor: pointer; font-weight: 500; }
+  #start-btn:active { transform: scale(0.97); }
+  #timer-bar-wrap { width: 100%; height: 5px; background: var(--color-border-tertiary); border-radius: 3px; overflow: hidden; margin: 2px 0 0; }
+  #timer-bar { height: 5px; border-radius: 3px; transition: width 0.1s linear, background 0.3s; }
+  .miss-flash { animation: flash 0.15s ease; }
+  @keyframes flash { 0%,100%{background:var(--color-background-secondary)} 50%{background:#f8c8c8} }
+  .pop { animation: pop 0.18s ease forwards; }
+  @keyframes pop { 0%{transform:scale(1)} 50%{transform:scale(1.35)} 100%{transform:scale(0); opacity:0} }
+  #score-board { display:none; text-align:center; padding: 30px 20px; }
+  #score-board h2 { font-size:20px; font-weight:500; margin:0 0 6px; }
+  #score-board .big { font-size:48px; font-weight:500; margin:8px 0; color:var(--color-text-primary); }
+  #score-board p { color:var(--color-text-secondary); font-size:14px; margin:4px 0; }
+</style>
+
+<h2 class="sr-only" style="position:absolute;left:-9999px">的タップゲーム — 出てくる的をタップしてスコアを稼ごう</h2>
+
+<div id="hud">
+  <div class="stat-box">
+    <div class="stat-label">スコア</div>
+    <div class="stat-val" id="score-disp">0</div>
+  </div>
+  <div style="flex:1;padding:0 12px;">
+    <div class="stat-label" style="text-align:center;margin-bottom:4px" id="time-label">残り時間</div>
+    <div id="timer-bar-wrap"><div id="timer-bar" style="width:100%"></div></div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">コンボ</div>
+    <div class="stat-val" id="combo-disp">×1</div>
+  </div>
+</div>
+
+<div id="game-area">
+  <div id="msg">的をタップしてスコアを稼ごう！<br>コンボで得点アップ✨</div>
+  <button id="start-btn">スタート</button>
+  <div id="score-board">
+    <h2>ゲームオーバー！</h2>
+    <div class="big" id="final-score">0</div>
+    <p>最高コンボ: <strong id="best-combo">1</strong>×</p>
+    <p>命中: <span id="hit-count">0</span> / <span id="total-count">0</span></p>
+    <button id="start-btn2" style="margin:18px auto 0;display:block;padding:12px 36px;font-size:16px;border-radius:24px;background:var(--color-background-primary);border:1.5px solid var(--color-border-primary);color:var(--color-text-primary);cursor:pointer;font-weight:500;">もう一度</button>
+  </div>
+</div>
+
+<script>
+const GAME_TIME = 20;
+const COLORS = [
+  {bg:'#AFA9EC',emoji:'⭐'},{bg:'#5DCAA5',emoji:'💎'},{bg:'#F0997B',emoji:'🔥'},
+  {bg:'#85B7EB',emoji:'🌊'},{bg:'#97C459',emoji:'🍀'},{bg:'#FAC775',emoji:'⚡'}
+];
+let score=0,combo=1,bestCombo=1,hits=0,totals=0,timeLeft=GAME_TIME,timerInterval,spawnTimeout,running=false;
+const area=document.getElementById('game-area');
+const scoreDisp=document.getElementById('score-disp');
+const comboDisp=document.getElementById('combo-disp');
+const timerBar=document.getElementById('timer-bar');
+const timeLabel=document.getElementById('time-label');
+const msg=document.getElementById('msg');
+const sbtn=document.getElementById('start-btn');
+const sboard=document.getElementById('score-board');
+
+function pct(n){return Math.round(n)+'%'}
+
+function spawnTarget(){
+  if(!running)return;
+  const aW=area.clientWidth, aH=area.clientHeight;
+  const size=Math.floor(44+Math.random()*32);
+  const c=COLORS[Math.floor(Math.random()*COLORS.length)];
+  const x=Math.floor(Math.random()*(aW-size));
+  const y=Math.floor(Math.random()*(aH-size));
+  const el=document.createElement('div');
+  el.className='target';
+  el.style.cssText=`width:${size}px;height:${size}px;left:${x}px;top:${y}px;background:${c.bg};font-size:${Math.floor(size*0.5)}px;`;
+  el.textContent=c.emoji;
+  const life=700+Math.random()*800;
+  const timeout=setTimeout(()=>{
+    if(el.parentNode){
+      el.remove();
+      totals++;
+      combo=1;comboDisp.textContent='×1';
+      area.classList.add('miss-flash');
+      setTimeout(()=>area.classList.remove('miss-flash'),150);
+    }
+  },life);
+  el.addEventListener('pointerdown',(e)=>{
+    e.preventDefault();
+    if(!running)return;
+    clearTimeout(timeout);
+    el.classList.add('pop');
+    const pts=10*combo;
+    score+=pts;hits++;totals++;
+    if(combo<10)combo++;
+    if(combo>bestCombo)bestCombo=combo;
+    scoreDisp.textContent=score;
+    comboDisp.textContent='×'+combo;
+    showPop(x+size/2,y+size/2,'+'+pts);
+    setTimeout(()=>el.remove(),200);
+  },{passive:false});
+  area.appendChild(el);
+  const nextSpawn=350+Math.random()*350;
+  spawnTimeout=setTimeout(spawnTarget,nextSpawn);
+}
+
+function showPop(x,y,txt){
+  const p=document.createElement('div');
+  p.style.cssText=`position:absolute;left:${x}px;top:${y}px;font-size:16px;font-weight:500;color:var(--color-text-primary);pointer-events:none;transform:translateY(0);opacity:1;transition:all 0.5s ease;`;
+  p.textContent=txt;
+  area.appendChild(p);
+  requestAnimationFrame(()=>{
+    p.style.transform='translateY(-32px)';p.style.opacity='0';
+  });
+  setTimeout(()=>p.remove(),500);
+}
+
+function startGame(){
+  score=0;combo=1;bestCombo=1;hits=0;totals=0;timeLeft=GAME_TIME;running=true;
+  scoreDisp.textContent='0';comboDisp.textContent='×1';
+  msg.style.display='none';sbtn.style.display='none';sboard.style.display='none';
+  area.querySelectorAll('.target').forEach(t=>t.remove());
+  timerBar.style.width='100%';timerBar.style.background='#5DCAA5';
+  spawnTarget();
+  timerInterval=setInterval(()=>{
+    timeLeft-=0.1;
+    const pctLeft=timeLeft/GAME_TIME;
+    timerBar.style.width=pct(pctLeft*100);
+    timerBar.style.background=pctLeft>0.4?'#5DCAA5':pctLeft>0.2?'#FAC775':'#F0997B';
+    timeLabel.textContent='残り '+Math.max(0,Math.ceil(timeLeft))+'秒';
+    if(timeLeft<=0)endGame();
+  },100);
+}
+
+function endGame(){
+  clearInterval(timerInterval);clearTimeout(spawnTimeout);running=false;
+  area.querySelectorAll('.target').forEach(t=>t.remove());
+  document.getElementById('final-score').textContent=score;
+  document.getElementById('best-combo').textContent=bestCombo;
+  document.getElementById('hit-count').textContent=hits;
+  document.getElementById('total-count').textContent=totals;
+  sboard.style.display='block';
+  timerBar.style.width='0%';
+  timeLabel.textContent='残り時間';
+}
+
+sbtn.addEventListener('click',startGame);
+document.getElementById('start-btn2').addEventListener('click',startGame);
+</script>
